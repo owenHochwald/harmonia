@@ -1,16 +1,24 @@
 package services
 
 import (
-	"mime/multipart"
+	"context"
 
+	"github.com/owenhochwald/harmonia/internal/models"
+	"github.com/owenhochwald/harmonia/internal/repo"
 	"github.com/owenhochwald/harmonia/internal/storage"
 )
 
 type MusicService struct {
 	Storage storage.Storage
-	Repo    string // TODO: change to a Repo struct
+	Repo    repo.SongRepo
 }
 
-func (s *MusicService) HandleUpload(fileHeader *multipart.FileHeader) error {
+// TODO: Implement full functionality
+func (s *MusicService) HandleUpload(ctx context.Context, song models.Song, data []byte) error {
 	return nil
+}
+
+// TODO: Implement full functionality
+func (s *MusicService) Identify(ctx context.Context, hash string) ([]models.Song, error) {
+	return nil, nil
 }
