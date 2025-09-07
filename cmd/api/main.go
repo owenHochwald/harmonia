@@ -1,21 +1,30 @@
 package main
 
 import (
+	"os"
+
 	"github.com/gin-gonic/gin"
-	config2 "github.com/owenhochwald/harmonia/internal/config"
+	"github.com/joho/godotenv"
+	"github.com/owenhochwald/harmonia/internal/config"
 	"github.com/owenhochwald/harmonia/internal/server"
+	"github.com/owenhochwald/harmonia/pkg/logger"
 )
 
 func main() {
-	// TODO: add full setup for config struct
-	config := config2.LoadConfig()
+	err := godotenv.Load()
 
-	// TODO: add full setup for app
-	app := server.Application{}
+	if err != nil {
+		panic("Error loading .env file")
+	}
+
+	app := server.Application{
+		Logger: logger.NewLogger(os.Getenv("ENVIRONMENT")),
+		Config: config.NewConfig(),
+	}
 
 	r := gin.Default()
 
 	server.SetupRoutes(r, &app)
 
-	r.Run(":" + config.Port)
+	r.Run(":" + app.Config.Port)
 }

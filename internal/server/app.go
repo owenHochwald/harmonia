@@ -5,7 +5,8 @@ import (
 	"github.com/rs/zerolog"
 )
 
+// TODO: add model properties
 type Application struct {
-	logger zerolog.Logger
-	config config.Config
+	Logger zerolog.Logger
+	Config config.Config
 }
