@@ -1,6 +1,8 @@
 package server
 
 import (
+	"database/sql"
+
 	"github.com/owenhochwald/harmonia/internal/config"
 	"github.com/rs/zerolog"
 )
@@ -9,4 +11,5 @@ import (
 type Application struct {
 	Logger zerolog.Logger
 	Config config.Config
+	DB     *sql.DB
 }

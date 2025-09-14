@@ -16,7 +16,7 @@ func main() {
 	if err != nil {
 		panic("Error loading .env file")
 	}
-
+	// TODO: add database connection
 	app := server.Application{
 		Logger: logger.NewLogger(os.Getenv("ENVIRONMENT")),
 		Config: config.NewConfig(),
