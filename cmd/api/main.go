@@ -8,6 +8,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/joho/godotenv"
+	_ "github.com/lib/pq"
 	"github.com/owenhochwald/harmonia/internal/config"
 	"github.com/owenhochwald/harmonia/internal/server"
 	"github.com/owenhochwald/harmonia/pkg/logger"
