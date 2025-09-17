@@ -23,6 +23,11 @@ func (m MockStorage) Delete(ctx context.Context, key string) error {
 
 type MockRepository struct{}
 
+func (m MockRepository) FindById(id int) error {
+	//TODO implement me
+	panic("implement me")
+}
+
 func (m MockRepository) SaveSong(song models.Song) error {
 	return nil
 }
