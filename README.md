@@ -95,13 +95,44 @@ fingerprints (song_id, hash, offset) -- Indexed on hash for O(log n) lookup
 
 ## Testing
 
-```bash
-# Unit tests
-go test ./internal/...
+**Separate Test Database:**
+- Development DB: `localhost:5432` (docker-compose.yml)
+- Test DB: `localhost:5433` (docker-compose.test.yml)
 
-# Integration tests (requires running Postgres)
-docker-compose up -d
-go test -tags=integration ./...
+**Quick Start:**
+```bash
+# Setup and run all tests
+./scripts/test-setup.sh run
+
+# Manual setup
+docker-compose -f docker-compose.test.yml up -d
+go test ./internal/repo -v
+```
+
+**Test Types:**
+```bash
+# Unit tests with mocks (no database required)
+go test ./internal/repo -run TestMock -v
+
+# Integration tests (requires test database)
+docker-compose -f docker-compose.test.yml up -d
+go test ./internal/repo -v
+
+# Specific test patterns
+go test ./internal/repo -run TestSongRepo_SaveSong -v
+go test ./internal/repo -run TestFingerprintRepo -v
+```
+
+**Test Database Management:**
+```bash
+# Start test database
+docker-compose -f docker-compose.test.yml up -d
+
+# Stop test database
+docker-compose -f docker-compose.test.yml down
+
+# Reset test database (remove volumes)
+docker-compose -f docker-compose.test.yml down -v
 ```
 
 ## Future Enhancements
