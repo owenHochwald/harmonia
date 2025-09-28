@@ -74,3 +74,57 @@ func (a *AudioService) ReadWAVProperties(r *bytes.Reader) (*AudioMetadata, error
 
 	return metaData, nil
 }
+func (a *AudioService) ConvertToMono(data []byte) ([]byte, error) {
+	metadata, err := a.ReadWAVProperties(bytes.NewReader(data))
+
+	if err != nil {
+		return nil, err
+	}
+
+	if metadata.OriginalChannels == 1 {
+		return data, nil
+	}
+
+	reader := bytes.NewReader(data)
+	wavReader := wav.NewReader(reader)
+	format, _ := wavReader.Format()
+
+	var monoSamples []wav.Sample
+	sampleCount := 0
+
+	for {
+		samples, err := wavReader.ReadSamples()
+		if err == io.EOF {
+			break
+		}
+
+		if err != nil {
+			return nil, err
+		}
+
+		// Convert each sample to mono
+		for _, sample := range samples {
+			sum := 0
+			for ch := uint(0); ch < uint(format.NumChannels); ch++ {
+				sum += wavReader.IntValue(sample, ch)
+			}
+			monoValue := sum / int(format.NumChannels)
+
+			monoSample := wav.Sample{
+				Values: [2]int{monoValue, monoValue},
+			}
+			monoSamples = append(monoSamples, monoSample)
+			sampleCount++
+		}
+	}
+
+	var outputBuffer bytes.Buffer
+
+	writer := wav.NewWriter(&outputBuffer, uint32(len(monoSamples)), 1, format.SampleRate, format.BitsPerSample)
+
+	err = writer.WriteSamples(monoSamples)
+	if err != nil {
+		return nil, err
+	}
+	return outputBuffer.Bytes(), nil
+}
