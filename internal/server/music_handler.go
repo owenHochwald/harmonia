@@ -2,6 +2,7 @@ package server
 
 import (
 	"bytes"
+	"fmt"
 	"io"
 	"os"
 
@@ -10,6 +11,28 @@ import (
 )
 
 func (app *Application) handleTestWaveUpload(c *gin.Context) {
+	params := c.DefaultQuery("test", "properties")
+	download := c.DefaultQuery("download", "false")
+
+	switch params {
+	case "properties":
+		app.testAudioProperties(c)
+		return
+	case "mono":
+		if download == "true" {
+			app.downloadMonoConversion(c)
+		} else {
+			app.testMonoConversion(c)
+		}
+		return
+	default:
+		c.JSON(400, gin.H{"error": "Invalid test parameter, please use 'properties' or 'mono'"})
+	}
+
+	app.testAudioProperties(c)
+}
+
+func (app *Application) testAudioProperties(c *gin.Context) {
 	file, err := os.Open("/Users/owenhochwald/Documents/code/personal/backend/go/harmonia/public/audios/sample-12s.wav")
 	if err != nil {
 		app.Logger.Error().Err(err).Msg("Failed to open file")
@@ -38,4 +61,104 @@ func (app *Application) handleTestWaveUpload(c *gin.Context) {
 	}
 
 	c.JSON(200, metaData)
+}
+
+func (app *Application) testMonoConversion(c *gin.Context) {
+	audioFile := "/Users/owenhochwald/Documents/code/personal/backend/go/harmonia/public/audios/sample-12s.wav"
+
+	data, err := app.readAudioFile(audioFile)
+	if err != nil {
+		app.Logger.Error().Err(err).Msg("Failed to read audio file")
+		c.JSON(500, gin.H{"error": err.Error()})
+		return
+	}
+
+	audioService := &services.AudioService{}
+
+	originalMetadata, err := audioService.ReadWAVProperties(bytes.NewReader(data))
+	if err != nil {
+		app.Logger.Error().Err(err).Msg("Failed to read original properties")
+		c.JSON(500, gin.H{"error": "Failed to read original properties"})
+		return
+	}
+
+	monoData, err := audioService.ConvertToMono(data)
+	if err != nil {
+		app.Logger.Error().Err(err).Msg("Failed to convert to mono")
+		c.JSON(500, gin.H{"error": "Failed to convert to mono", "details": err.Error()})
+		return
+	}
+
+	convertedMetadata, err := audioService.ReadWAVProperties(bytes.NewReader(monoData))
+	if err != nil {
+		app.Logger.Error().Err(err).Msg("Failed to read converted properties")
+		c.JSON(500, gin.H{"error": "Failed to read converted properties"})
+		return
+	}
+
+	app.Logger.Info().
+		Uint16("original_channels", originalMetadata.OriginalChannels).
+		Uint16("converted_channels", convertedMetadata.OriginalChannels).
+		Int("original_size", len(data)).
+		Int("converted_size", len(monoData)).
+		Msg("Successfully converted to mono")
+
+	c.JSON(200, gin.H{
+		"test":      "mono_conversion",
+		"success":   true,
+		"original":  originalMetadata,
+		"converted": convertedMetadata,
+		"size_change": gin.H{
+			"original_bytes":    len(data),
+			"converted_bytes":   len(monoData),
+			"reduction_percent": float64(len(data)-len(monoData)) / float64(len(data)) * 100,
+		},
+		"message":      "Mono conversion completed successfully",
+		"download_url": "/test/audio?test=mono&download=true", // Tell user how to download
+	})
+}
+
+func (app *Application) downloadMonoConversion(c *gin.Context) {
+	audioFile := "/Users/owenhochwald/Documents/code/personal/backend/go/harmonia/public/audios/sample-12s.wav"
+
+	data, err := app.readAudioFile(audioFile)
+	if err != nil {
+		app.Logger.Error().Err(err).Msg("Failed to read audio file")
+		c.JSON(500, gin.H{"error": err.Error()})
+		return
+	}
+
+	audioService := &services.AudioService{}
+
+	monoData, err := audioService.ConvertToMono(data)
+	if err != nil {
+		app.Logger.Error().Err(err).Msg("Failed to convert to mono")
+		c.JSON(500, gin.H{"error": "Failed to convert to mono", "details": err.Error()})
+		return
+	}
+
+	c.Data(200, "audio/wav", monoData)
+}
+
+func (app *Application) readAudioFile(filePath string) ([]byte, error) {
+	if _, err := os.Stat(filePath); os.IsNotExist(err) {
+		return nil, fmt.Errorf("audio file not found: %s", filePath)
+	}
+
+	file, err := os.Open(filePath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to open file: %w", err)
+	}
+	defer func() {
+		if err := file.Close(); err != nil {
+			app.Logger.Error().Err(err).Msg("Failed to close file")
+		}
+	}()
+
+	data, err := io.ReadAll(file)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read file: %w", err)
+	}
+
+	return data, nil
 }
