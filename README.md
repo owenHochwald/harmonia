@@ -150,6 +150,9 @@ docker-compose -f docker-compose.test.yml down -v
 4. Push to branch (`git push origin feature/amazing-feature`)
 5. Open Pull Request
 
+## Learning Resources (so you can make it yourself!)
+- [Coding Geek: How does Shazaam work?](https://drive.google.com/file/d/1ahyCTXBAZiuni6RTzHzLoOwwfTRFaU-C/view)
+- [Audio Hashing Paper](https://hajim.rochester.edu/ece/sites/zduan/teaching/ece472/projects/2019/AudioFingerprinting.pdf)
 ## License
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
