@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"fmt"
 	"io"
+	"net/http"
 	"time"
 
 	"github.com/youpy/go-wav"
@@ -33,6 +34,25 @@ type AudioMetadata struct {
 func (a *AudioService) Process(r io.Reader, originalSize int64) (*ProcessedAudio, error) {
 	// TODO: Implement me!
 	return nil, nil
+}
+
+func (a *AudioService) ValidateFile(r *bytes.Reader) (error, int) {
+	wavReader := wav.NewReader(r)
+
+	format, err := wavReader.Format()
+	if err != nil {
+		return fmt.Errorf("error reading WAV format: %w", err), http.StatusInternalServerError
+	}
+
+	if format.AudioFormat != wav.AudioFormatPCM {
+		return fmt.Errorf("unsupported audio format: %d", format.AudioFormat), http.StatusBadRequest
+	}
+
+	if wavReader.Size >= 50 {
+		return fmt.Errorf("file is too large: %d", wavReader.Size), http.StatusRequestEntityTooLarge
+	}
+
+	return nil, http.StatusOK
 }
 
 func (a *AudioService) ReadWAVProperties(r *bytes.Reader) (*AudioMetadata, error) {

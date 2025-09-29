@@ -4,11 +4,38 @@ import (
 	"bytes"
 	"fmt"
 	"io"
+	"net/http"
 	"os"
 
 	"github.com/gin-gonic/gin"
 	"github.com/owenhochwald/harmonia/internal/services"
 )
+
+func (app *Application) handleAudioUpload(c *gin.Context) {
+	audioBytes, err := io.ReadAll(c.Request.Body)
+
+	if err != nil || len(audioBytes) == 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"message": "please provide a valid file"})
+	}
+
+	if err = c.Request.Body.Close(); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"message": "error reading and closing the request body"})
+	}
+	app.Logger.Info().Str("bytes", string(audioBytes))
+	app.Logger.Info().Str("size", string(len(audioBytes))).Msg("audio file received")
+
+	audioService := services.AudioService{}
+	reader := bytes.NewReader(audioBytes)
+
+	err, code := audioService.ValidateFile(reader)
+
+	if err != nil {
+		c.JSON(code, err.Error())
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": "successfully loaded in your wave data"})
+
+}
 
 func (app *Application) handleTestWaveUpload(c *gin.Context) {
 	params := c.DefaultQuery("test", "properties")
