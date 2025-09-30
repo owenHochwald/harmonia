@@ -11,6 +11,14 @@ import (
 	"github.com/owenhochwald/harmonia/internal/services"
 )
 
+type MusicHandler struct {
+	audioService *services.AudioServiceInterface
+}
+
+func newMusicHandler(audioService *services.AudioServiceInterface) *MusicHandler {
+	return &MusicHandler{audioService: audioService}
+}
+
 func (app *Application) handleAudioUpload(c *gin.Context) {
 	file, _, err := c.Request.FormFile("file")
 	if err != nil {
