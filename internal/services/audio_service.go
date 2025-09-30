@@ -10,6 +10,12 @@ import (
 	"github.com/youpy/go-wav"
 )
 
+type AudioServiceInterface interface {
+	ValidateFile(r *bytes.Reader) (error, int)
+	Process(r io.Reader, originalSize int64) (*ProcessedAudio, error)
+	ReadWAVProperties(r *bytes.Reader) (*AudioMetadata, error)
+}
+
 type AudioService struct{}
 
 type ProcessedAudio struct {
