@@ -28,16 +28,14 @@ func main() {
 	if err != nil {
 		log.Fatal().Err(err).Msg("Cannot connect to database")
 	}
-
-	app := server.Application{
-		Logger: log,
-		Config: cfg,
-		DB:     db,
+	app, err := server.NewApplication(cfg, log, db)
+	if err != nil {
+		panic(err)
 	}
 
 	r := gin.Default()
 
-	server.SetupRoutes(r, &app)
+	server.SetupRoutes(r, app)
 
 	r.Run(":" + app.Config.Port)
 }
