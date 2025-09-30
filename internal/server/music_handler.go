@@ -12,7 +12,13 @@ import (
 )
 
 func (app *Application) handleAudioUpload(c *gin.Context) {
-	audioBytes, err := io.ReadAll(c.Request.Body)
+	file, _, err := c.Request.FormFile("file")
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"message": "failed to get file"})
+	}
+	defer file.Close()
+
+	audioBytes, err := io.ReadAll(file)
 
 	if err != nil || len(audioBytes) == 0 {
 		c.JSON(http.StatusBadRequest, gin.H{"message": "please provide a valid file"})
@@ -21,20 +27,24 @@ func (app *Application) handleAudioUpload(c *gin.Context) {
 	if err = c.Request.Body.Close(); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"message": "error reading and closing the request body"})
 	}
-	app.Logger.Info().Str("bytes", string(audioBytes))
-	app.Logger.Info().Str("size", string(len(audioBytes))).Msg("audio file received")
+	app.Logger.Info().Int("size_bytes", len(audioBytes)).Msg("audio file received")
 
-	audioService := services.AudioService{}
-	reader := bytes.NewReader(audioBytes)
+	audioService := &services.AudioService{}
 
-	err, code := audioService.ValidateFile(reader)
-
-	if err != nil {
-		c.JSON(code, err.Error())
+	if err, code := audioService.ValidateFile(bytes.NewReader(audioBytes)); err != nil {
+		c.JSON(code, gin.H{"error": err.Error()})
+		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{"message": "successfully loaded in your wave data"})
+	metaData, err := audioService.ReadWAVProperties(bytes.NewReader(audioBytes))
 
+	if err != nil {
+		app.Logger.Error().Err(err).Msg("Failed to read WAV properties")
+		c.JSON(500, gin.H{"error": "Failed to read WAV properties"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": "success", "metadata": metaData})
 }
 
 func (app *Application) handleTestWaveUpload(c *gin.Context) {
