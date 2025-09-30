@@ -18,6 +18,10 @@ type AudioServiceInterface interface {
 
 type AudioService struct{}
 
+func NewAudioService() AudioServiceInterface {
+	return &AudioService{}
+}
+
 type ProcessedAudio struct {
 	Samples       []float64     `json:"-"` // Don't serialize raw samples
 	SampleRate    uint32        `json:"sample_rate"`
