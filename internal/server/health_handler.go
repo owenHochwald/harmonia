@@ -2,7 +2,13 @@ package server
 
 import "github.com/gin-gonic/gin"
 
-func (app *Application) HealthHandler(c *gin.Context) {
+type HealthHandler struct{}
+
+func NewHealthHandler() *HealthHandler {
+	return &HealthHandler{}
+}
+
+func (h *HealthHandler) Check(c *gin.Context) {
 	c.JSON(200, gin.H{
 		"status": "healthy - all systems operational",
 	})
