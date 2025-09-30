@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/owenhochwald/harmonia/internal/models"
+	"github.com/owenhochwald/harmonia/internal/repo"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -17,7 +18,7 @@ var (
 func setupService() (*MusicService, context.Context, models.Song) {
 	service = &MusicService{
 		Storage: MockStorage{},
-		Repo:    MockRepository{},
+		Repo:    &repo.MockSongRepo{},
 	}
 	testSong = MockSongFactory()
 
