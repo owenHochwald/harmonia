@@ -11,15 +11,15 @@ import (
 	"github.com/owenhochwald/harmonia/internal/models"
 )
 
-type songRepoSQL struct {
+type SongRepoSQL struct {
 	DB *sql.DB
 }
 
 func NewSongRepo(db *sql.DB) SongRepo {
-	return &songRepoSQL{DB: db}
+	return &SongRepoSQL{DB: db}
 }
 
-func (s songRepoSQL) FindById(id string) (*models.Song, error) {
+func (s SongRepoSQL) FindById(id string) (*models.Song, error) {
 	query := `
 		SELECT s.id, s.title, s.artist, s.album, s.year, s.s3_key, s.fingerprint, s.created_at
 		FROM songs s
@@ -49,7 +49,7 @@ func (s songRepoSQL) FindById(id string) (*models.Song, error) {
 	return &song, nil
 }
 
-func (s songRepoSQL) SaveSong(song models.Song) error {
+func (s SongRepoSQL) SaveSong(song models.Song) error {
 	// Validate required fields
 	if err := validateSong(song); err != nil {
 		return err
@@ -109,7 +109,7 @@ func validateSong(song models.Song) error {
 	return nil
 }
 
-func (s songRepoSQL) FindByFingerprint(hash string) (*models.Song, error) {
+func (s SongRepoSQL) FindByFingerprint(hash string) (*models.Song, error) {
 	query := `
 		SELECT s.id, s.title, s.artist, s.album, s.year, s.s3_key, s.fingerprint, s.created_at
 		FROM songs s

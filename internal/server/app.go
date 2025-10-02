@@ -65,7 +65,7 @@ func (app *Application) initServices() error {
 }
 
 func (app *Application) initHandlers() error {
-	app.MusicHandler = NewMusicHandler(&app.AudioService)
+	app.MusicHandler = NewMusicHandler(app.AudioService, app.SongRepo)
 	app.HealthHandler = NewHealthHandler()
 
 	return nil
