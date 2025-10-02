@@ -5,9 +5,12 @@ import (
 	"encoding/binary"
 	"fmt"
 	"io"
+	"math"
 	"net/http"
 	"time"
 
+	"github.com/mjibson/go-dsp/fft"
+	"github.com/mjibson/go-dsp/window"
 	"github.com/youpy/go-wav"
 	"github.com/zeozeozeo/gomplerate"
 )
@@ -16,6 +19,10 @@ type AudioServiceInterface interface {
 	ValidateFile(r *bytes.Reader) (error, int)
 	Process(raw []byte) (*AudioData, error)
 	ReadWAVProperties(r *bytes.Reader) (*AudioMetadata, error)
+	ConvertToMono(data []byte) ([]byte, error)
+	Resample(data []byte, targetSampleRate uint32) ([]byte, error)
+	Normalize(data []byte) ([]byte, error)
+	Spectrogram(data []byte, windowSize, hopSize int) (*Spectrogram, error)
 }
 
 type AudioService struct {
@@ -34,7 +41,7 @@ type AudioData struct {
 }
 
 type ProcessedAudio struct {
-	Samples       []float64     `json:"-"` // Don't serialize raw samples
+	Samples       []float64     `json:"-"`
 	SampleRate    uint32        `json:"sample_rate"`
 	Duration      time.Duration `json:"duration"`
 	NumSamples    int           `json:"num_samples"`
@@ -53,30 +60,44 @@ type AudioMetadata struct {
 	SampleRate       uint32  `json:"sample_rate"`
 }
 
-func (a *AudioService) Process(raw []byte) (*AudioData, error) {
-	// TODO: Implement me!
-	a.Data.Metadata = *a.ExtractMetadata(raw)
-
-	// TODO: error handling
-	mono, _ := a.ConvertToMono(raw)
-
-	//a.Resample(mono, float64(16000))
-
-	filtered := a.FilterFrequencies(mono)
-
-	normalized := a.Normalize(filtered, a.Data.Metadata.SampleRate, 16000)
-
-	spectrogram := a.Spectrogram(normalized, 2048, 512)
-
-	a.ExtractMFCCs(spectrogram, 20)
-	a.ExtractSpectralFeatures(spectrogram)
-
-	return a.Data, nil
+type Spectrogram struct {
+	Data          [][]float64
+	FrequencyBins []float64
+	TimeFrames    []float64
+	SampleRate    uint32
 }
 
-func (a *AudioService) ExtractMetadata(data []byte) *AudioMetadata {
-	// TODO: Implement me
-	return nil
+func (a *AudioService) Process(raw []byte) (*AudioData, error) {
+	metadata, err := a.ReadWAVProperties(bytes.NewReader(raw))
+	if err != nil {
+		return nil, fmt.Errorf("failed to read metadata: %w", err)
+	}
+	a.Data.Metadata = *metadata
+
+	mono, err := a.ConvertToMono(raw)
+	if err != nil {
+		return nil, fmt.Errorf("failed to convert to mono: %w", err)
+	}
+
+	resampled, err := a.Resample(mono, 16000)
+	if err != nil {
+		return nil, fmt.Errorf("failed to resample: %w", err)
+	}
+
+	normalized, err := a.Normalize(resampled)
+	if err != nil {
+		return nil, fmt.Errorf("failed to normalize: %w", err)
+	}
+
+	spectrogram, err := a.Spectrogram(normalized, 2048, 512)
+	if err != nil {
+		return nil, fmt.Errorf("failed to generate spectrogram: %w", err)
+	}
+
+	// TODO: Extract features from spectrogram
+	_ = spectrogram
+
+	return a.Data, nil
 }
 
 func (a *AudioService) ValidateFile(r *bytes.Reader) (error, int) {
@@ -91,7 +112,8 @@ func (a *AudioService) ValidateFile(r *bytes.Reader) (error, int) {
 	format, err := wavReader.Format()
 	if err != nil {
 		return fmt.Errorf("error reading WAV format: %w", err), http.StatusInternalServerError
-	} else if format.AudioFormat != wav.AudioFormatPCM {
+	}
+	if format.AudioFormat != wav.AudioFormatPCM {
 		return fmt.Errorf("unsupported audio format: %d", format.AudioFormat), http.StatusBadRequest
 	}
 	return nil, http.StatusOK
@@ -106,16 +128,13 @@ func (a *AudioService) GetTotalSamples(data []byte) (int, error) {
 	wavReader := wav.NewReader(reader)
 
 	format, err := wavReader.Format()
-
 	if err != nil {
 		return 0, fmt.Errorf("failed to read format: %w", err)
 	}
 
 	dataChunkSize := binary.LittleEndian.Uint32(data[40:44])
-
 	bytesPerSample := format.BitsPerSample / 8
 	bytesPerFrame := bytesPerSample * format.NumChannels
-
 	totalFrames := int(dataChunkSize) / int(bytesPerFrame)
 
 	return totalFrames, nil
@@ -134,7 +153,6 @@ func (a *AudioService) ReadWAVProperties(r *bytes.Reader) (*AudioMetadata, error
 	}
 
 	duration, err := wavReader.Duration()
-	seconds := duration.Seconds()
 	if err != nil {
 		return nil, fmt.Errorf("error calculating WAV duration: %w", err)
 	}
@@ -151,17 +169,20 @@ func (a *AudioService) ReadWAVProperties(r *bytes.Reader) (*AudioMetadata, error
 
 	data, err := io.ReadAll(r)
 	if err != nil {
-		return nil, fmt.Errorf("error reading bytes form reader: %v", err)
+		return nil, fmt.Errorf("error reading bytes from reader: %w", err)
 	}
 
 	totalSamples, err := a.GetTotalSamples(data)
+	if err != nil {
+		return nil, fmt.Errorf("error getting total samples: %w", err)
+	}
 
 	metaData := &AudioMetadata{
 		OriginalFormat:   "WAV",
 		OriginalChannels: format.NumChannels,
 		OriginalRate:     format.SampleRate,
 		OriginalBits:     format.BitsPerSample,
-		Duration:         seconds,
+		Duration:         duration.Seconds(),
 		FileSize:         size,
 		TotalSamples:     int64(totalSamples),
 		SampleRate:       format.SampleRate,
@@ -169,24 +190,29 @@ func (a *AudioService) ReadWAVProperties(r *bytes.Reader) (*AudioMetadata, error
 
 	return metaData, nil
 }
+
 func (a *AudioService) ConvertToMono(data []byte) ([]byte, error) {
 	metadata, err := a.ReadWAVProperties(bytes.NewReader(data))
-
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to read properties: %w", err)
 	}
 
 	if metadata.OriginalChannels == 1 {
 		return data, nil
 	}
 
-	totalFrames, _ := a.GetTotalSamples(data)
+	totalFrames, err := a.GetTotalSamples(data)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get total samples: %w", err)
+	}
 
 	reader := bytes.NewReader(data)
 	wavReader := wav.NewReader(reader)
-	format, _ := wavReader.Format()
+	format, err := wavReader.Format()
+	if err != nil {
+		return nil, fmt.Errorf("failed to read format: %w", err)
+	}
 
-	//var monoSamples []wav.Sample
 	monoSamples := make([]wav.Sample, 0, totalFrames)
 
 	for {
@@ -194,9 +220,8 @@ func (a *AudioService) ConvertToMono(data []byte) ([]byte, error) {
 		if err == io.EOF {
 			break
 		}
-
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("failed to read samples: %w", err)
 		}
 
 		for _, sample := range samples {
@@ -207,13 +232,12 @@ func (a *AudioService) ConvertToMono(data []byte) ([]byte, error) {
 			monoValue := int(sum / int64(format.NumChannels))
 
 			monoSamples = append(monoSamples, wav.Sample{
-				Values: [2]int{monoValue, monoValue},
+				Values: [2]int{monoValue, 0},
 			})
 		}
 	}
 
 	var outputBuffer bytes.Buffer
-
 	writer := wav.NewWriter(&outputBuffer, uint32(len(monoSamples)), 1, format.SampleRate, format.BitsPerSample)
 
 	if err := writer.WriteSamples(monoSamples); err != nil {
@@ -275,7 +299,6 @@ func (a *AudioService) Resample(data []byte, targetSampleRate uint32) ([]byte, e
 	}
 
 	var outputBuffer bytes.Buffer
-
 	writer := wav.NewWriter(
 		&outputBuffer,
 		uint32(len(outputSamples)),
@@ -291,22 +314,184 @@ func (a *AudioService) Resample(data []byte, targetSampleRate uint32) ([]byte, e
 	return outputBuffer.Bytes(), nil
 }
 
-func (a *AudioService) ExtractMFCCs(spectrogram any, i int) interface{} {
-	return nil
+func findPeak(samples []int) int {
+	if len(samples) == 0 {
+		return 0
+	}
+
+	abs := func(x int) int {
+		if x < 0 {
+			return -x
+		}
+		return x
+	}
+
+	peak := 0
+	for _, sample := range samples {
+		if abs(sample) > peak {
+			peak = abs(sample)
+		}
+	}
+
+	return peak
 }
 
-func (a *AudioService) Normalize(mono []byte, rate uint32, i int) interface{} {
-	return nil
+func (a *AudioService) Normalize(data []byte) ([]byte, error) {
+	reader := bytes.NewReader(data)
+	wavReader := wav.NewReader(reader)
+	format, err := wavReader.Format()
+	if err != nil {
+		return nil, fmt.Errorf("failed to read format: %w", err)
+	}
+
+	var samples []int
+	for {
+		wavSamples, err := wavReader.ReadSamples()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return nil, fmt.Errorf("failed to read samples: %w", err)
+		}
+
+		for _, sample := range wavSamples {
+			for ch := uint(0); ch < uint(format.NumChannels); ch++ {
+				samples = append(samples, wavReader.IntValue(sample, ch))
+			}
+		}
+	}
+
+	peak := findPeak(samples)
+	if peak == 0 {
+		return data, nil // Silent audio
+	}
+
+	maxValue := float64(1 << (format.BitsPerSample - 1))
+	targetPeak := 0.95 * maxValue
+	scaleFactor := targetPeak / float64(peak)
+
+	if scaleFactor >= 0.99 && scaleFactor <= 1.01 {
+		return data, nil
+	}
+
+	maxInt := int(maxValue) - 1
+	minInt := -int(maxValue)
+	normalizedSamples := make([]int, len(samples))
+
+	for i, sample := range samples {
+		scaled := float64(sample) * scaleFactor
+		intValue := int(scaled)
+
+		if intValue > maxInt {
+			intValue = maxInt
+		}
+		if intValue < minInt {
+			intValue = minInt
+		}
+
+		normalizedSamples[i] = intValue
+	}
+
+	numChannels := int(format.NumChannels)
+	numSamples := len(normalizedSamples) / numChannels
+	outputSamples := make([]wav.Sample, numSamples)
+
+	for i := 0; i < numSamples; i++ {
+		var values [2]int
+		for ch := 0; ch < numChannels && ch < 2; ch++ {
+			values[ch] = normalizedSamples[i*numChannels+ch]
+		}
+		outputSamples[i] = wav.Sample{Values: values}
+	}
+
+	var outputBuffer bytes.Buffer
+	writer := wav.NewWriter(
+		&outputBuffer,
+		uint32(len(outputSamples)),
+		format.NumChannels,
+		format.SampleRate,
+		format.BitsPerSample,
+	)
+
+	if err := writer.WriteSamples(outputSamples); err != nil {
+		return nil, fmt.Errorf("failed to write samples: %w", err)
+	}
+
+	return outputBuffer.Bytes(), nil
 }
 
-func (a *AudioService) ExtractSpectralFeatures(spectrogram any) interface{} {
-	return nil
-}
+func (a *AudioService) Spectrogram(data []byte, windowSize, hopSize int) (*Spectrogram, error) {
+	reader := bytes.NewReader(data)
+	wavReader := wav.NewReader(reader)
+	format, err := wavReader.Format()
+	if err != nil {
+		return nil, fmt.Errorf("failed to read format: %w", err)
+	}
 
-func (a *AudioService) Spectrogram(normalized interface{}, i int, i2 int) interface{} {
-	return nil
-}
+	var samples []float64
+	maxValue := float64(1 << (format.BitsPerSample - 1))
 
-func (a *AudioService) FilterFrequencies(FilterFrequencies interface{}) []byte {
-	return nil
+	for {
+		wavSamples, err := wavReader.ReadSamples()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return nil, fmt.Errorf("failed to read samples: %w", err)
+		}
+
+		for _, sample := range wavSamples {
+			sum := 0
+			for ch := uint(0); ch < uint(format.NumChannels); ch++ {
+				sum += wavReader.IntValue(sample, ch)
+			}
+			avg := float64(sum) / float64(format.NumChannels)
+			samples = append(samples, avg/maxValue)
+		}
+	}
+
+	numFrames := (len(samples)-windowSize)/hopSize + 1
+	spectrogram := make([][]float64, numFrames)
+	timeFrames := make([]float64, numFrames)
+
+	for frameIdx := 0; frameIdx < numFrames; frameIdx++ {
+		start := frameIdx * hopSize
+		end := start + windowSize
+		if end > len(samples) {
+			break
+		}
+
+		windowSamples := samples[start:end]
+
+		complexWindow := make([]complex128, windowSize)
+		for i, s := range windowSamples {
+			complexWindow[i] = complex(s, 0)
+		}
+
+		windowed := window.Hann(complexWindow)
+
+		spectrum := fft.FFT(windowed)
+
+		magnitudes := make([]float64, windowSize/2)
+		for i := 0; i < windowSize/2; i++ {
+			real := real(spectrum[i])
+			imag := imag(spectrum[i])
+			magnitudes[i] = math.Sqrt(real*real + imag*imag)
+		}
+
+		spectrogram[frameIdx] = magnitudes
+		timeFrames[frameIdx] = float64(start) / float64(format.SampleRate)
+	}
+
+	frequencyBins := make([]float64, windowSize/2)
+	for i := 0; i < windowSize/2; i++ {
+		frequencyBins[i] = float64(i) * float64(format.SampleRate) / float64(windowSize)
+	}
+
+	return &Spectrogram{
+		Data:          spectrogram,
+		FrequencyBins: frequencyBins,
+		TimeFrames:    timeFrames,
+		SampleRate:    format.SampleRate,
+	}, nil
 }
