@@ -9,18 +9,28 @@ import (
 	"time"
 
 	"github.com/youpy/go-wav"
+	"github.com/zaf/resample"
 )
 
 type AudioServiceInterface interface {
 	ValidateFile(r *bytes.Reader) (error, int)
-	Process(raw []byte) (*ProcessedAudio, error)
+	Process(raw []byte) (*AudioData, error)
 	ReadWAVProperties(r *bytes.Reader) (*AudioMetadata, error)
 }
 
-type AudioService struct{}
+type AudioService struct {
+	Data *AudioData
+}
 
 func NewAudioService() AudioServiceInterface {
-	return &AudioService{}
+	return &AudioService{
+		Data: &AudioData{},
+	}
+}
+
+type AudioData struct {
+	Metadata AudioMetadata
+	Audio    ProcessedAudio
 }
 
 type ProcessedAudio struct {
@@ -28,7 +38,6 @@ type ProcessedAudio struct {
 	SampleRate    uint32        `json:"sample_rate"`
 	Duration      time.Duration `json:"duration"`
 	NumSamples    int           `json:"num_samples"`
-	Channels      uint16        `json:"original_channels"`
 	BitsPerSample uint16        `json:"original_bits_per_sample"`
 	ProcessedAt   time.Time     `json:"processed_at"`
 }
@@ -44,26 +53,28 @@ type AudioMetadata struct {
 	SampleRate       uint32  `json:"sample_rate"`
 }
 
-func (a *AudioService) Process(raw []byte) (*ProcessedAudio, error) {
+func (a *AudioService) Process(raw []byte) (*AudioData, error) {
 	// TODO: Implement me!
-	metaData := ExtractMetadata(raw)
+	a.Data.Metadata = *a.ExtractMetadata(raw)
 
 	// TODO: error handling
 	mono, _ := a.ConvertToMono(raw)
 
+	a.Resample(mono, float64(16000))
+
 	filtered := a.FilterFrequencies(mono)
 
-	normalized := a.Normalize(filtered, metaData.SampleRate, 16000)
+	normalized := a.Normalize(filtered, a.Data.Metadata.SampleRate, 16000)
 
 	spectrogram := a.Spectrogram(normalized, 2048, 512)
 
 	a.ExtractMFCCs(spectrogram, 20)
 	a.ExtractSpectralFeatures(spectrogram)
 
-	return nil, nil
+	return a.Data, nil
 }
 
-func ExtractMetadata(data []byte) *AudioMetadata {
+func (a *AudioService) ExtractMetadata(data []byte) *AudioMetadata {
 	// TODO: Implement me
 	return nil
 }
@@ -212,6 +223,40 @@ func (a *AudioService) ConvertToMono(data []byte) ([]byte, error) {
 	return outputBuffer.Bytes(), nil
 }
 
+func (a *AudioService) Resample(data []byte, targetSampleRate float64) ([]byte, error) {
+	reader := bytes.NewReader(data)
+	wavReader := wav.NewReader(reader)
+	format, err := wavReader.Format()
+	if err != nil {
+		return nil, fmt.Errorf("failed to read format: %w", err)
+	}
+
+	if float64(format.SampleRate) == targetSampleRate {
+		return data, nil
+	}
+
+	pcmData := data[44:]
+
+	inputBuffer := bytes.NewBuffer(pcmData)
+	outputBuffer := &bytes.Buffer{}
+
+	resampler, err := resample.New(outputBuffer, float64(format.SampleRate), targetSampleRate, int(format.NumChannels), resample.I16, resample.I32)
+	if err != nil {
+		return nil, fmt.Errorf("error creating resampler: %w", err)
+	}
+
+	_, err = io.Copy(resampler, inputBuffer)
+	if err != nil {
+		return nil, fmt.Errorf("error resampling data: %w", err)
+	}
+
+	if err := resampler.Close(); err != nil {
+		return nil, fmt.Errorf("error closing resampler: %w", err)
+	}
+
+	resampledData := outputBuffer.Bytes()
+	return resampledData, nil
+}
 func (a *AudioService) ExtractMFCCs(spectrogram any, i int) interface{} {
 	return nil
 }
