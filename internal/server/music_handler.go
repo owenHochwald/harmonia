@@ -71,8 +71,6 @@ func (m *MusicHandler) handleAudioUpload(c *gin.Context) {
 		return
 	}
 
-	metaData, err := audioService.ReadWAVProperties(bytes.NewReader(audioBytes))
-
 	song, err := m.MusicService.HandleUpload(audioBytes)
 
 	if err != nil {
@@ -80,7 +78,7 @@ func (m *MusicHandler) handleAudioUpload(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{"message": "success", "metadata": metaData})
+	c.JSON(http.StatusOK, gin.H{"message": "success", "song": song})
 }
 
 func (m *MusicHandler) handleTestWaveUpload(c *gin.Context) {
