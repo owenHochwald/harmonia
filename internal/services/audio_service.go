@@ -9,7 +9,7 @@ import (
 	"time"
 
 	"github.com/youpy/go-wav"
-	"github.com/zaf/resample"
+	"github.com/zeozeozeo/gomplerate"
 )
 
 type AudioServiceInterface interface {
@@ -60,7 +60,7 @@ func (a *AudioService) Process(raw []byte) (*AudioData, error) {
 	// TODO: error handling
 	mono, _ := a.ConvertToMono(raw)
 
-	a.Resample(mono, float64(16000))
+	//a.Resample(mono, float64(16000))
 
 	filtered := a.FilterFrequencies(mono)
 
@@ -223,7 +223,7 @@ func (a *AudioService) ConvertToMono(data []byte) ([]byte, error) {
 	return outputBuffer.Bytes(), nil
 }
 
-func (a *AudioService) Resample(data []byte, targetSampleRate float64) ([]byte, error) {
+func (a *AudioService) Resample(data []byte, targetSampleRate uint32) ([]byte, error) {
 	reader := bytes.NewReader(data)
 	wavReader := wav.NewReader(reader)
 	format, err := wavReader.Format()
@@ -231,32 +231,66 @@ func (a *AudioService) Resample(data []byte, targetSampleRate float64) ([]byte, 
 		return nil, fmt.Errorf("failed to read format: %w", err)
 	}
 
-	if float64(format.SampleRate) == targetSampleRate {
+	if format.SampleRate == targetSampleRate {
 		return data, nil
 	}
 
-	pcmData := data[44:]
+	var int16Samples []int16
 
-	inputBuffer := bytes.NewBuffer(pcmData)
-	outputBuffer := &bytes.Buffer{}
+	for {
+		samples, err := wavReader.ReadSamples()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return nil, fmt.Errorf("failed to read samples: %w", err)
+		}
 
-	resampler, err := resample.New(outputBuffer, float64(format.SampleRate), targetSampleRate, int(format.NumChannels), resample.I16, resample.I32)
+		for _, sample := range samples {
+			sum := 0
+			for ch := uint(0); ch < uint(format.NumChannels); ch++ {
+				sum += wavReader.IntValue(sample, ch)
+			}
+			avgValue := int16(sum / int(format.NumChannels))
+			int16Samples = append(int16Samples, avgValue)
+		}
+	}
+
+	resampler, err := gomplerate.NewResampler(
+		1,
+		int(format.SampleRate),
+		int(targetSampleRate),
+	)
 	if err != nil {
-		return nil, fmt.Errorf("error creating resampler: %w", err)
+		return nil, fmt.Errorf("failed to create resampler: %w", err)
 	}
 
-	_, err = io.Copy(resampler, inputBuffer)
-	if err != nil {
-		return nil, fmt.Errorf("error resampling data: %w", err)
+	resampledSamples := resampler.ResampleInt16(int16Samples)
+
+	outputSamples := make([]wav.Sample, len(resampledSamples))
+	for i, val := range resampledSamples {
+		outputSamples[i] = wav.Sample{
+			Values: [2]int{int(val), 0},
+		}
 	}
 
-	if err := resampler.Close(); err != nil {
-		return nil, fmt.Errorf("error closing resampler: %w", err)
+	var outputBuffer bytes.Buffer
+
+	writer := wav.NewWriter(
+		&outputBuffer,
+		uint32(len(outputSamples)),
+		1,
+		targetSampleRate,
+		format.BitsPerSample,
+	)
+
+	if err := writer.WriteSamples(outputSamples); err != nil {
+		return nil, fmt.Errorf("failed to write samples: %w", err)
 	}
 
-	resampledData := outputBuffer.Bytes()
-	return resampledData, nil
+	return outputBuffer.Bytes(), nil
 }
+
 func (a *AudioService) ExtractMFCCs(spectrogram any, i int) interface{} {
 	return nil
 }
