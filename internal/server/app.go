@@ -58,14 +58,14 @@ func (app *Application) initRepos() error {
 }
 
 func (app *Application) initServices() error {
-	app.MusicService = services.NewMusicService(app.Storage, app.SongRepo)
+	app.MusicService = services.NewMusicService(app.Storage, app.SongRepo, app.AudioService)
 	app.AudioService = services.NewAudioService()
 
 	return nil
 }
 
 func (app *Application) initHandlers() error {
-	app.MusicHandler = NewMusicHandler(app.AudioService, app.SongRepo)
+	app.MusicHandler = NewMusicHandler(app.AudioService, app.MusicService, app.SongRepo)
 	app.HealthHandler = NewHealthHandler()
 
 	return nil

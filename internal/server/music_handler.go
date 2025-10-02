@@ -14,12 +14,14 @@ import (
 
 type MusicHandler struct {
 	AudioService services.AudioServiceInterface
+	MusicService services.MusicServiceInterface
 	MusicRepo    repo.SongRepo
 }
 
-func NewMusicHandler(audioService services.AudioServiceInterface, songRepo repo.SongRepo) *MusicHandler {
+func NewMusicHandler(audioService services.AudioServiceInterface, musicService services.MusicServiceInterface, songRepo repo.SongRepo) *MusicHandler {
 	return &MusicHandler{
 		AudioService: audioService,
+		MusicService: musicService,
 		MusicRepo:    songRepo,
 	}
 }
@@ -70,6 +72,8 @@ func (m *MusicHandler) handleAudioUpload(c *gin.Context) {
 	}
 
 	metaData, err := audioService.ReadWAVProperties(bytes.NewReader(audioBytes))
+
+	song, err := m.MusicService.HandleUpload(audioBytes)
 
 	if err != nil {
 		c.JSON(500, gin.H{"error": "Failed to read WAV properties"})
