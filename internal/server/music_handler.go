@@ -8,15 +8,41 @@ import (
 	"os"
 
 	"github.com/gin-gonic/gin"
+	"github.com/owenhochwald/harmonia/internal/repo"
 	"github.com/owenhochwald/harmonia/internal/services"
 )
 
 type MusicHandler struct {
-	audioService *services.AudioServiceInterface
+	AudioService services.AudioServiceInterface
+	MusicRepo    repo.SongRepo
 }
 
-func NewMusicHandler(audioService *services.AudioServiceInterface) *MusicHandler {
-	return &MusicHandler{audioService: audioService}
+func NewMusicHandler(audioService services.AudioServiceInterface, songRepo repo.SongRepo) *MusicHandler {
+	return &MusicHandler{
+		AudioService: audioService,
+		MusicRepo:    songRepo,
+	}
+}
+
+func (m *MusicHandler) handleGetSongs(c *gin.Context) {
+
+}
+
+func (m *MusicHandler) handleGetASong(c *gin.Context) {
+	id := c.Param("id")
+	song, err := m.MusicRepo.FindById(id)
+
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get song"})
+		return
+	}
+
+	if song == nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Song not found"})
+		return
+	}
+
+	c.JSON(http.StatusOK, song)
 }
 
 func (m *MusicHandler) handleAudioUpload(c *gin.Context) {
