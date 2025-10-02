@@ -10,7 +10,6 @@ import (
 	"time"
 
 	"github.com/mjibson/go-dsp/fft"
-	"github.com/mjibson/go-dsp/window"
 	"github.com/youpy/go-wav"
 	"github.com/zeozeozeo/gomplerate"
 )
@@ -23,6 +22,7 @@ type AudioServiceInterface interface {
 	Resample(data []byte, targetSampleRate uint32) ([]byte, error)
 	Normalize(data []byte) ([]byte, error)
 	Spectrogram(data []byte, windowSize, hopSize int) (*Spectrogram, error)
+	GetTotalSamples(data []byte) (int, error)
 }
 
 type AudioService struct {
@@ -366,8 +366,8 @@ func (a *AudioService) Normalize(data []byte) ([]byte, error) {
 		return data, nil // Silent audio
 	}
 
-	maxValue := float64(1 << (format.BitsPerSample - 1))
-	targetPeak := 0.95 * maxValue
+	maxValue := int(1 << (format.BitsPerSample - 1))
+	targetPeak := 0.95 * float64(maxValue)
 	scaleFactor := targetPeak / float64(peak)
 
 	if scaleFactor >= 0.99 && scaleFactor <= 1.01 {
@@ -429,7 +429,7 @@ func (a *AudioService) Spectrogram(data []byte, windowSize, hopSize int) (*Spect
 	}
 
 	var samples []float64
-	maxValue := float64(1 << (format.BitsPerSample - 1))
+	maxValue := int(1 << (format.BitsPerSample - 1))
 
 	for {
 		wavSamples, err := wavReader.ReadSamples()
@@ -446,7 +446,7 @@ func (a *AudioService) Spectrogram(data []byte, windowSize, hopSize int) (*Spect
 				sum += wavReader.IntValue(sample, ch)
 			}
 			avg := float64(sum) / float64(format.NumChannels)
-			samples = append(samples, avg/maxValue)
+			samples = append(samples, avg/float64(maxValue))
 		}
 	}
 
@@ -463,14 +463,22 @@ func (a *AudioService) Spectrogram(data []byte, windowSize, hopSize int) (*Spect
 
 		windowSamples := samples[start:end]
 
+		hannWindow := make([]float64, windowSize)
+		for i := 0; i < windowSize; i++ {
+			hannWindow[i] = 0.5 * (1.0 - math.Cos(2.0*math.Pi*float64(i)/float64(windowSize-1)))
+		}
+
+		windowed := make([]float64, windowSize)
+		for i := 0; i < windowSize; i++ {
+			windowed[i] = windowSamples[i] * hannWindow[i]
+		}
+
 		complexWindow := make([]complex128, windowSize)
-		for i, s := range windowSamples {
+		for i, s := range windowed {
 			complexWindow[i] = complex(s, 0)
 		}
 
-		windowed := window.Hann(complexWindow)
-
-		spectrum := fft.FFT(windowed)
+		spectrum := fft.FFT(complexWindow)
 
 		magnitudes := make([]float64, windowSize/2)
 		for i := 0; i < windowSize/2; i++ {
