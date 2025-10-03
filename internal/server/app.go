@@ -20,8 +20,9 @@ type Application struct {
 	SongRepo        repo.SongRepo
 	FingerprintRepo repo.FingerprintRepo
 
-	AudioService services.AudioServiceInterface
-	MusicService services.MusicServiceInterface
+	AudioService       services.AudioServiceInterface
+	MusicService       services.MusicServiceInterface
+	FingerprintService services.FingerprintServiceInterface
 
 	MusicHandler  *MusicHandler
 	HealthHandler *HealthHandler
@@ -58,8 +59,9 @@ func (app *Application) initRepos() error {
 }
 
 func (app *Application) initServices() error {
-	app.MusicService = services.NewMusicService(app.Storage, app.SongRepo, app.AudioService)
+	app.MusicService = services.NewMusicService(app.Storage, app.SongRepo, app.AudioService, app.FingerprintService)
 	app.AudioService = services.NewAudioService()
+	app.FingerprintService = services.NewFingerprintService(app.FingerprintRepo)
 
 	return nil
 }

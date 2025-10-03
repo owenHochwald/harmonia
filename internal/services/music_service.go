@@ -16,16 +16,18 @@ type MusicServiceInterface interface {
 }
 
 type MusicService struct {
-	Storage      storage.Storage
-	Repo         repo.SongRepo
-	AudioService AudioServiceInterface
+	Storage            storage.Storage
+	Repo               repo.SongRepo
+	AudioService       AudioServiceInterface
+	FingerprintService FingerprintServiceInterface
 }
 
-func NewMusicService(storage storage.Storage, repo repo.SongRepo, audioService AudioServiceInterface) MusicServiceInterface {
+func NewMusicService(storage storage.Storage, repo repo.SongRepo, audioService AudioServiceInterface, fingerprintService FingerprintServiceInterface) MusicServiceInterface {
 	return &MusicService{
-		Storage:      storage,
-		Repo:         repo,
-		AudioService: audioService,
+		Storage:            storage,
+		Repo:               repo,
+		AudioService:       audioService,
+		FingerprintService: fingerprintService,
 	}
 }
 
@@ -48,10 +50,13 @@ func (s *MusicService) HandleUpload(data []byte) (*models.Song, error) {
 		return nil, fmt.Errorf("error normalizing wav file: %w", err)
 	}
 
-	_, err = s.AudioService.Spectrogram(processed, 2048, 512)
+	spectrogram, err := s.AudioService.Spectrogram(processed, 2048, 512)
 	if err != nil {
 		return nil, fmt.Errorf("error getting spectrogram for wav file: %w", err)
 	}
+
+	_, err = s.FingerprintService.GenerateFingerprints(spectrogram)
+
 	song := models.Song{}
 
 	//song := models.Song{
